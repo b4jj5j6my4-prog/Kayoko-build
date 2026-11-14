@@ -8,6 +8,7 @@ KayokoCore_FILES += KayokoKeyboardHostResolver.m
 KayokoCore_FILES += KayokoSpringBoardHooks.m
 KayokoCore_FILES += KayokoPasteTipHooks.m
 KayokoCore_FILES += ../Helper/KayokoSwipeUpGestureRecognizer.m
+KayokoCore_FILES += ../Shared/KayokoAvailability.m
 KayokoCore_FILES += $(wildcard Manager/*.m Actions/*.m Controllers/*.m Coordinators/*.m DataSources/*.m Models/*.m Presentation/*.m Views/*.m)
 KayokoCore_FILES += $(wildcard ../Shared/Tags/*.m ../Shared/Scripts/*.m)
 
@@ -38,7 +39,6 @@ KayokoCore_PRIVATE_FRAMEWORKS += CoreServices
 
 KayokoCore_LIBRARIES += sqlite3
 KayokoCore_LIBRARIES += substrate
-KayokoCore_LDFLAGS += -Wl,-U,___isPlatformVersionAtLeast
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 KayokoCore_LIBRARIES += roothide
 endif

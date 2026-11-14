@@ -15,6 +15,7 @@ KayokoHelper_FILES += KayokoInputSwitcherHooks.mm
 KayokoHelper_FILES += KayokoDictationHooks.m
 KayokoHelper_FILES += KayokoSwipeUpGestureRecognizer.m
 KayokoHelper_FILES += KayokoSwipeUpHooks.m
+KayokoHelper_FILES += ../Shared/KayokoAvailability.m
 
 KayokoHelper_CFLAGS += -fobjc-arc
 KayokoHelper_CFLAGS += -I../Preferences
@@ -25,7 +26,6 @@ KayokoHelper_FRAMEWORKS += UIKit
 KayokoHelper_FRAMEWORKS += AudioToolbox
 
 KayokoHelper_LIBRARIES += substrate
-KayokoHelper_LDFLAGS += -Wl,-U,___isPlatformVersionAtLeast
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 KayokoHelper_LIBRARIES += roothide
 endif
