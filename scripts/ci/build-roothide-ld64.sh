@@ -16,11 +16,32 @@ readonly OUTPUT_DIR="${ROOT}/artifacts/roothide-ld64"
 readonly SOURCE_DIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/Procursus-roothide"
 readonly BUILD_LOG="${OUTPUT_DIR}/build.log"
 readonly PROVENANCE="${OUTPUT_DIR}/provenance.txt"
+readonly FAILURE_SUMMARY="${OUTPUT_DIR}/failure-summary.txt"
 
 mkdir -p "${OUTPUT_DIR}"
 rm -rf "${SOURCE_DIR}"
 
 exec > >(tee "${BUILD_LOG}") 2>&1
+
+report_failure() {
+  local status=$?
+  trap - ERR
+
+  {
+    printf 'exit_status=%d\n' "${status}"
+    printf '%s\n' '--- build.log tail ---'
+    tail -n 80 "${BUILD_LOG}" 2>/dev/null || true
+  } > "${FAILURE_SUMMARY}"
+
+  if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+    local annotation
+    annotation="$(tail -n 40 "${FAILURE_SUMMARY}" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/$/%0A/' | tr -d '\n')"
+    printf '::error title=RootHide ld64 构建失败::%s\n' "${annotation}"
+  fi
+
+  exit "${status}"
+}
+trap report_failure ERR
 
 if command -v gmake >/dev/null 2>&1; then
   MAKE=gmake
