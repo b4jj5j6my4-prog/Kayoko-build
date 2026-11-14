@@ -56,6 +56,10 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, assign) BOOL needsAppTokenReloadAfterCurrentLoad;
 @property(nonatomic, assign) NSUInteger appTokenLoadRequestIdentifier;
 @property(nonatomic, assign) BOOL deferredSearchTokenBootstrapPending;
+@property(nonatomic, assign, readwrite, getter=isHistoryFilterPanelVisible) BOOL historyFilterPanelVisible;
+@property(nonatomic, assign) BOOL historyFilterShowsCategories;
+@property(nonatomic, assign) BOOL historyFilterShowsTags;
+@property(nonatomic, assign) BOOL historyFilterShowsApps;
 @property(nonatomic, assign, readwrite, getter=isFavoritesFilterPanelVisible) BOOL favoritesFilterPanelVisible;
 @property(nonatomic, assign) BOOL favoritesFilterShowsCategories;
 @property(nonatomic, assign) BOOL favoritesFilterShowsTags;
@@ -86,6 +90,7 @@ NS_ASSUME_NONNULL_END
         [_favoritesTokenListViewController applyFilterOrder:_filterOrderStore];
         [_historyTokenListViewController setDelegate:self];
         [_favoritesTokenListViewController setDelegate:self];
+        [_historyTokenListViewController setKeepsSelectedSectionsVisible:YES];
         [_favoritesTokenListViewController setKeepsSelectedSectionsVisible:YES];
         __weak typeof(self) weakSelf = self;
         [_historyTokenListViewController setContentHeightDidChange:^{
@@ -98,11 +103,15 @@ NS_ASSUME_NONNULL_END
         _appTokens = @[];
         _metadataProvider = [[KayokoApplicationMetadataProvider alloc] init];
         _appTokensDirty = YES;
+        _historyFilterPanelVisible = kKayokoPreferenceKeyHistoryFilterPanelVisibleDefaultValue;
+        _historyFilterShowsCategories = kKayokoPreferenceKeyHistoryFilterShowsCategoriesDefaultValue;
+        _historyFilterShowsTags = kKayokoPreferenceKeyHistoryFilterShowsTagsDefaultValue;
+        _historyFilterShowsApps = kKayokoPreferenceKeyHistoryFilterShowsAppsDefaultValue;
         _favoritesFilterPanelVisible = kKayokoPreferenceKeyFavoritesFilterPanelVisibleDefaultValue;
         _favoritesFilterShowsCategories = kKayokoPreferenceKeyFavoritesFilterShowsCategoriesDefaultValue;
         _favoritesFilterShowsTags = kKayokoPreferenceKeyFavoritesFilterShowsTagsDefaultValue;
         _favoritesFilterShowsApps = kKayokoPreferenceKeyFavoritesFilterShowsAppsDefaultValue;
-        [self loadFavoritesFilterPreferences];
+        [self loadFilterPreferences];
 
         _presentationController =
             [[KayokoSearchPresentationController alloc] initWithContainerView:containerView
@@ -117,7 +126,7 @@ NS_ASSUME_NONNULL_END
         [_presentationController setDelegate:self];
 
         [self attachToListViewController:historyListViewController hidesSearchBar:YES];
-        [self applyFavoritesFilterSectionVisibility];
+        [self applyFilterSectionVisibility];
         [[NSNotificationCenter defaultCenter] addObserver:self
                                                  selector:@selector(handleHistoryDidChangeNotification:)
                                                      name:kKayokoPasteboardManagerHistoryDidChangeNotification
@@ -344,7 +353,8 @@ NS_ASSUME_NONNULL_END
         return NO;
     }
     UISearchTextField *searchTextField = (UISearchTextField *)textField;
-    if (searchBar == [self favoritesSearchBar]) {
+    KayokoHistoryListViewController *listViewController = [self listViewControllerForSearchBar:searchBar];
+    if ([self filterPanelVisibleForListViewController:listViewController]) {
         if ([[searchTextField tokens] count] == 0) {
             return NO;
         }
@@ -366,7 +376,7 @@ NS_ASSUME_NONNULL_END
                              listViewController:(KayokoHistoryListViewController *)listViewController {
     KayokoSearchCriteria *criteria =
         [[listViewController searchCriteria] criteriaByReplacingSearchText:[searchBar text]];
-    if ([self listViewControllerIsFavorites:listViewController]) {
+    if ([self filterPanelVisibleForListViewController:listViewController]) {
         return criteria;
     }
     NSArray<UISearchToken *> *tokens = [(UISearchTextField *)[searchBar searchTextField] tokens];
@@ -398,7 +408,65 @@ NS_ASSUME_NONNULL_END
                                                 tagUUID:tagUUID];
 }
 
-#pragma mark - Favorites Filter Panel
+#pragma mark - Filter Panels
+
+- (void)setHistoryFilterPanelVisible:(BOOL)historyFilterPanelVisible {
+    if (_historyFilterPanelVisible == historyFilterPanelVisible) {
+        [self updateSearchTokenHeaderHeights];
+        return;
+    }
+    _historyFilterPanelVisible = historyFilterPanelVisible;
+    [self persistFilterPreferences];
+    if (historyFilterPanelVisible) {
+        [self bootstrapSearchTokenSourcesIfNeeded];
+    }
+    [self applyFilterSectionVisibility];
+    [self updateAllTokenLists];
+    [self pruneFilterCriteriaForHiddenSectionsInListViewController:[self historyListViewController]];
+}
+
+- (void)toggleHistoryFilterPanelVisible {
+    [self setHistoryFilterPanelVisible:![self isHistoryFilterPanelVisible]];
+}
+
+- (void)setHistoryFilterShowsCategories:(BOOL)showsCategories {
+    if (_historyFilterShowsCategories == showsCategories) {
+        return;
+    }
+    _historyFilterShowsCategories = showsCategories;
+    [self persistFilterPreferences];
+    [self applyFilterSectionVisibility];
+    [self updateAllTokenLists];
+    [self pruneFilterCriteriaForHiddenSectionsInListViewController:[self historyListViewController]];
+}
+
+- (void)setHistoryFilterShowsTags:(BOOL)showsTags {
+    if (_historyFilterShowsTags == showsTags) {
+        return;
+    }
+    _historyFilterShowsTags = showsTags;
+    [self persistFilterPreferences];
+    if (showsTags) {
+        [self bootstrapSearchTokenSourcesIfNeeded];
+    }
+    [self applyFilterSectionVisibility];
+    [self updateAllTokenLists];
+    [self pruneFilterCriteriaForHiddenSectionsInListViewController:[self historyListViewController]];
+}
+
+- (void)setHistoryFilterShowsApps:(BOOL)showsApps {
+    if (_historyFilterShowsApps == showsApps) {
+        return;
+    }
+    _historyFilterShowsApps = showsApps;
+    [self persistFilterPreferences];
+    if (showsApps) {
+        [self bootstrapSearchTokenSourcesIfNeeded];
+    }
+    [self applyFilterSectionVisibility];
+    [self updateAllTokenLists];
+    [self pruneFilterCriteriaForHiddenSectionsInListViewController:[self historyListViewController]];
+}
 
 - (void)setFavoritesFilterPanelVisible:(BOOL)favoritesFilterPanelVisible {
     if (_favoritesFilterPanelVisible == favoritesFilterPanelVisible) {
@@ -406,13 +474,13 @@ NS_ASSUME_NONNULL_END
         return;
     }
     _favoritesFilterPanelVisible = favoritesFilterPanelVisible;
-    [self persistFavoritesFilterPreferences];
+    [self persistFilterPreferences];
     if (favoritesFilterPanelVisible) {
         [self bootstrapSearchTokenSourcesIfNeeded];
     }
-    [self applyFavoritesFilterSectionVisibility];
+    [self applyFilterSectionVisibility];
     [self updateAllTokenLists];
-    [self pruneFavoritesFilterCriteriaForHiddenSections];
+    [self pruneFilterCriteriaForHiddenSectionsInListViewController:[self favoritesListViewController]];
 }
 
 - (void)toggleFavoritesFilterPanelVisible {
@@ -424,10 +492,10 @@ NS_ASSUME_NONNULL_END
         return;
     }
     _favoritesFilterShowsCategories = showsCategories;
-    [self persistFavoritesFilterPreferences];
-    [self applyFavoritesFilterSectionVisibility];
+    [self persistFilterPreferences];
+    [self applyFilterSectionVisibility];
     [self updateAllTokenLists];
-    [self pruneFavoritesFilterCriteriaForHiddenSections];
+    [self pruneFilterCriteriaForHiddenSectionsInListViewController:[self favoritesListViewController]];
 }
 
 - (void)setFavoritesFilterShowsTags:(BOOL)showsTags {
@@ -435,13 +503,13 @@ NS_ASSUME_NONNULL_END
         return;
     }
     _favoritesFilterShowsTags = showsTags;
-    [self persistFavoritesFilterPreferences];
+    [self persistFilterPreferences];
     if (showsTags) {
         [self bootstrapSearchTokenSourcesIfNeeded];
     }
-    [self applyFavoritesFilterSectionVisibility];
+    [self applyFilterSectionVisibility];
     [self updateAllTokenLists];
-    [self pruneFavoritesFilterCriteriaForHiddenSections];
+    [self pruneFilterCriteriaForHiddenSectionsInListViewController:[self favoritesListViewController]];
 }
 
 - (void)setFavoritesFilterShowsApps:(BOOL)showsApps {
@@ -449,13 +517,13 @@ NS_ASSUME_NONNULL_END
         return;
     }
     _favoritesFilterShowsApps = showsApps;
-    [self persistFavoritesFilterPreferences];
+    [self persistFilterPreferences];
     if (showsApps) {
         [self bootstrapSearchTokenSourcesIfNeeded];
     }
-    [self applyFavoritesFilterSectionVisibility];
+    [self applyFilterSectionVisibility];
     [self updateAllTokenLists];
-    [self pruneFavoritesFilterCriteriaForHiddenSections];
+    [self pruneFilterCriteriaForHiddenSectionsInListViewController:[self favoritesListViewController]];
 }
 
 #pragma mark - Layout
@@ -478,55 +546,101 @@ NS_ASSUME_NONNULL_END
            [[listViewController historyKey] isEqualToString:kKayokoHistoryKeyFavorites];
 }
 
-- (void)loadFavoritesFilterPreferences {
+- (BOOL)filterPanelVisibleForListViewController:(KayokoHistoryListViewController *)listViewController {
+    return [self listViewControllerIsFavorites:listViewController] ? [self isFavoritesFilterPanelVisible]
+                                                                  : [self isHistoryFilterPanelVisible];
+}
+
+- (BOOL)filterShowsCategoriesForListViewController:(KayokoHistoryListViewController *)listViewController {
+    return [self listViewControllerIsFavorites:listViewController] ? [self favoritesFilterShowsCategories]
+                                                                  : [self historyFilterShowsCategories];
+}
+
+- (BOOL)filterShowsTagsForListViewController:(KayokoHistoryListViewController *)listViewController {
+    return [self listViewControllerIsFavorites:listViewController] ? [self favoritesFilterShowsTags]
+                                                                  : [self historyFilterShowsTags];
+}
+
+- (BOOL)filterShowsAppsForListViewController:(KayokoHistoryListViewController *)listViewController {
+    return [self listViewControllerIsFavorites:listViewController] ? [self favoritesFilterShowsApps]
+                                                                  : [self historyFilterShowsApps];
+}
+
+- (void)loadFilterPreferences {
     NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:kKayokoPreferencesIdentifier];
-    id panelVisible = [defaults objectForKey:kKayokoPreferenceKeyFavoritesFilterPanelVisible];
-    if (panelVisible != nil) {
-        _favoritesFilterPanelVisible = [panelVisible boolValue];
+    id historyPanelVisible = [defaults objectForKey:kKayokoPreferenceKeyHistoryFilterPanelVisible];
+    if (historyPanelVisible != nil) {
+        _historyFilterPanelVisible = [historyPanelVisible boolValue];
     }
-    id showsCategories = [defaults objectForKey:kKayokoPreferenceKeyFavoritesFilterShowsCategories];
-    if (showsCategories != nil) {
-        _favoritesFilterShowsCategories = [showsCategories boolValue];
+    id historyShowsCategories = [defaults objectForKey:kKayokoPreferenceKeyHistoryFilterShowsCategories];
+    if (historyShowsCategories != nil) {
+        _historyFilterShowsCategories = [historyShowsCategories boolValue];
     }
-    id showsTags = [defaults objectForKey:kKayokoPreferenceKeyFavoritesFilterShowsTags];
-    if (showsTags != nil) {
-        _favoritesFilterShowsTags = [showsTags boolValue];
+    id historyShowsTags = [defaults objectForKey:kKayokoPreferenceKeyHistoryFilterShowsTags];
+    if (historyShowsTags != nil) {
+        _historyFilterShowsTags = [historyShowsTags boolValue];
     }
-    id showsApps = [defaults objectForKey:kKayokoPreferenceKeyFavoritesFilterShowsApps];
-    if (showsApps != nil) {
-        _favoritesFilterShowsApps = [showsApps boolValue];
+    id historyShowsApps = [defaults objectForKey:kKayokoPreferenceKeyHistoryFilterShowsApps];
+    if (historyShowsApps != nil) {
+        _historyFilterShowsApps = [historyShowsApps boolValue];
+    }
+    id favoritesPanelVisible = [defaults objectForKey:kKayokoPreferenceKeyFavoritesFilterPanelVisible];
+    if (favoritesPanelVisible != nil) {
+        _favoritesFilterPanelVisible = [favoritesPanelVisible boolValue];
+    }
+    id favoritesShowsCategories = [defaults objectForKey:kKayokoPreferenceKeyFavoritesFilterShowsCategories];
+    if (favoritesShowsCategories != nil) {
+        _favoritesFilterShowsCategories = [favoritesShowsCategories boolValue];
+    }
+    id favoritesShowsTags = [defaults objectForKey:kKayokoPreferenceKeyFavoritesFilterShowsTags];
+    if (favoritesShowsTags != nil) {
+        _favoritesFilterShowsTags = [favoritesShowsTags boolValue];
+    }
+    id favoritesShowsApps = [defaults objectForKey:kKayokoPreferenceKeyFavoritesFilterShowsApps];
+    if (favoritesShowsApps != nil) {
+        _favoritesFilterShowsApps = [favoritesShowsApps boolValue];
     }
 }
 
-- (void)persistFavoritesFilterPreferences {
+- (void)persistFilterPreferences {
     NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:kKayokoPreferencesIdentifier];
+    [defaults setBool:[self isHistoryFilterPanelVisible] forKey:kKayokoPreferenceKeyHistoryFilterPanelVisible];
+    [defaults setBool:[self historyFilterShowsCategories] forKey:kKayokoPreferenceKeyHistoryFilterShowsCategories];
+    [defaults setBool:[self historyFilterShowsTags] forKey:kKayokoPreferenceKeyHistoryFilterShowsTags];
+    [defaults setBool:[self historyFilterShowsApps] forKey:kKayokoPreferenceKeyHistoryFilterShowsApps];
     [defaults setBool:[self isFavoritesFilterPanelVisible] forKey:kKayokoPreferenceKeyFavoritesFilterPanelVisible];
     [defaults setBool:[self favoritesFilterShowsCategories] forKey:kKayokoPreferenceKeyFavoritesFilterShowsCategories];
     [defaults setBool:[self favoritesFilterShowsTags] forKey:kKayokoPreferenceKeyFavoritesFilterShowsTags];
     [defaults setBool:[self favoritesFilterShowsApps] forKey:kKayokoPreferenceKeyFavoritesFilterShowsApps];
 }
 
-- (void)applyFavoritesFilterSectionVisibility {
-    [[self historyTokenListViewController] setShowsCategorySectionEnabled:NO];
-    [[self historyTokenListViewController] setShowsTagSectionEnabled:NO];
-    [[self historyTokenListViewController] setShowsAppSectionEnabled:NO];
-    [[self favoritesTokenListViewController] setShowsCategorySectionEnabled:[self favoritesFilterShowsCategories]];
+- (void)applyFilterSectionVisibility {
+    [[self historyTokenListViewController]
+        setShowsCategorySectionEnabled:[self historyFilterShowsCategories]];
+    [[self historyTokenListViewController] setShowsTagSectionEnabled:[self historyFilterShowsTags]];
+    [[self historyTokenListViewController] setShowsAppSectionEnabled:[self historyFilterShowsApps]];
+    [[self favoritesTokenListViewController]
+        setShowsCategorySectionEnabled:[self favoritesFilterShowsCategories]];
     [[self favoritesTokenListViewController] setShowsTagSectionEnabled:[self favoritesFilterShowsTags]];
     [[self favoritesTokenListViewController] setShowsAppSectionEnabled:[self favoritesFilterShowsApps]];
 }
 
-- (void)pruneFavoritesFilterCriteriaForHiddenSections {
-    KayokoHistoryListViewController *favoritesListViewController = [self favoritesListViewController];
-    if (!favoritesListViewController) {
+- (void)pruneFilterCriteriaForHiddenSectionsInListViewController:
+    (KayokoHistoryListViewController *)listViewController {
+    if (!listViewController) {
         return;
     }
-    KayokoSearchCriteria *criteria = [favoritesListViewController searchCriteria];
-    BOOL panelVisible = [self isFavoritesFilterPanelVisible];
-    NSString *categoryValue =
-        (panelVisible && [self favoritesFilterShowsCategories]) ? [criteria categoryValue] : nil;
-    NSString *tagUUID = (panelVisible && [self favoritesFilterShowsTags]) ? [criteria tagUUID] : nil;
-    NSString *appBundleIdentifier =
-        (panelVisible && [self favoritesFilterShowsApps]) ? [criteria appBundleIdentifier] : nil;
+    KayokoSearchCriteria *criteria = [listViewController searchCriteria];
+    BOOL panelVisible = [self filterPanelVisibleForListViewController:listViewController];
+    NSString *categoryValue = (panelVisible && [self filterShowsCategoriesForListViewController:listViewController])
+                                  ? [criteria categoryValue]
+                                  : nil;
+    NSString *tagUUID = (panelVisible && [self filterShowsTagsForListViewController:listViewController])
+                            ? [criteria tagUUID]
+                            : nil;
+    NSString *appBundleIdentifier = (panelVisible && [self filterShowsAppsForListViewController:listViewController])
+                                        ? [criteria appBundleIdentifier]
+                                        : nil;
     KayokoSearchCriteria *prunedCriteria = [KayokoSearchCriteria criteriaWithSearchText:[criteria searchText]
                                                                           categoryValue:categoryValue
                                                                     appBundleIdentifier:appBundleIdentifier
@@ -534,20 +648,16 @@ NS_ASSUME_NONNULL_END
     if ([prunedCriteria isEqualToCriteria:criteria]) {
         return;
     }
-    [self applySearchCriteria:prunedCriteria toListViewController:favoritesListViewController];
+    [self applySearchCriteria:prunedCriteria toListViewController:listViewController];
 }
 
 - (BOOL)shouldShowTokenListForListViewController:(KayokoHistoryListViewController *)listViewController {
-    if ([self isEndingSearchTransition]) {
+    if ([self isEndingSearchTransition] || ![self filterPanelVisibleForListViewController:listViewController]) {
         return NO;
     }
-    if (![self listViewControllerIsFavorites:listViewController]) {
-        return NO;
-    }
-    if (![self isFavoritesFilterPanelVisible]) {
-        return NO;
-    }
-    return [self favoritesFilterShowsCategories] || [self favoritesFilterShowsTags] || [self favoritesFilterShowsApps];
+    return [self filterShowsCategoriesForListViewController:listViewController] ||
+           [self filterShowsTagsForListViewController:listViewController] ||
+           [self filterShowsAppsForListViewController:listViewController];
 }
 
 - (void)updateSearchTokenHeaderHeights {
@@ -570,15 +680,10 @@ NS_ASSUME_NONNULL_END
 - (void)updateTokenListForListViewController:(KayokoHistoryListViewController *)listViewController {
     KayokoSearchTokenListViewController *tokenListController =
         [self tokenListViewControllerForListViewController:listViewController];
-    if ([self listViewControllerIsFavorites:listViewController]) {
-        [tokenListController setShowsCategorySectionEnabled:[self favoritesFilterShowsCategories]];
-        [tokenListController setShowsTagSectionEnabled:[self favoritesFilterShowsTags]];
-        [tokenListController setShowsAppSectionEnabled:[self favoritesFilterShowsApps]];
-    } else {
-        [tokenListController setShowsCategorySectionEnabled:NO];
-        [tokenListController setShowsTagSectionEnabled:NO];
-        [tokenListController setShowsAppSectionEnabled:NO];
-    }
+    [tokenListController
+        setShowsCategorySectionEnabled:[self filterShowsCategoriesForListViewController:listViewController]];
+    [tokenListController setShowsTagSectionEnabled:[self filterShowsTagsForListViewController:listViewController]];
+    [tokenListController setShowsAppSectionEnabled:[self filterShowsAppsForListViewController:listViewController]];
     [tokenListController updateWithSearchCriteria:[listViewController searchCriteria]
                                         tagTokens:[self tagTokens]
                                         appTokens:[self appTokens]];
@@ -907,8 +1012,9 @@ NS_ASSUME_NONNULL_END
     [self attachToListViewController:listViewController hidesSearchBar:![self isSearchActive]];
     if ([self isSearchActive]) {
         [self reloadTagTokens];
-    } else if ([self listViewControllerIsFavorites:listViewController] && [self isFavoritesFilterPanelVisible] &&
-               ([self favoritesFilterShowsTags] || [self favoritesFilterShowsApps])) {
+    } else if ([self filterPanelVisibleForListViewController:listViewController] &&
+               ([self filterShowsTagsForListViewController:listViewController] ||
+                [self filterShowsAppsForListViewController:listViewController])) {
         [self bootstrapSearchTokenSourcesIfNeeded];
     }
     [self syncSearchBarForListViewController:listViewController];

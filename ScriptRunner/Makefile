@@ -1,4 +1,4 @@
-ARCHS := arm64
+ARCHS := arm64 arm64e
 TOOL_NAME := kayoko_script
 kayoko_script_FILES := main.m
 kayoko_script_CFLAGS := -fobjc-arc

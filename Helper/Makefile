@@ -25,6 +25,7 @@ KayokoHelper_FRAMEWORKS += UIKit
 KayokoHelper_FRAMEWORKS += AudioToolbox
 
 KayokoHelper_LIBRARIES += substrate
+KayokoHelper_LDFLAGS += -Wl,-U,___isPlatformVersionAtLeast
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 KayokoHelper_LIBRARIES += roothide
 endif

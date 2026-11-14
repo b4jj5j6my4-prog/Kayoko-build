@@ -38,6 +38,7 @@ KayokoCore_PRIVATE_FRAMEWORKS += CoreServices
 
 KayokoCore_LIBRARIES += sqlite3
 KayokoCore_LIBRARIES += substrate
+KayokoCore_LDFLAGS += -Wl,-U,___isPlatformVersionAtLeast
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 KayokoCore_LIBRARIES += roothide
 endif

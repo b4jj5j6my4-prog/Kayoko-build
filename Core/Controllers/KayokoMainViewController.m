@@ -1413,11 +1413,11 @@ NS_ASSUME_NONNULL_END
     if ([historyKey isEqualToString:kKayokoHistoryKeyFavorites]) {
         [leadingButton setMenu:[self favoritesFilterMenu]];
     } else {
-        [leadingButton setMenu:[self clipboardClearMenu]];
+        [leadingButton setMenu:[self historyFilterAndClearMenu]];
     }
 }
 
-- (UIMenu *)favoritesFilterMenu {
+- (NSArray<UIMenuElement *> *)filterActionsForFavorites:(BOOL)favorites {
     NSBundle *bundle = [KayokoPasteboardManager localizationBundle];
     KayokoSearchController *searchController = [self searchController];
     __weak typeof(self) weakSelf = self;
@@ -1440,20 +1440,56 @@ NS_ASSUME_NONNULL_END
                                    }];
         };
 
-    UIAction *categories = makeAction(
-        [bundle localizedStringForKey:@"Categories" value:nil table:@"Tweak"],
-        [searchController favoritesFilterShowsCategories],
-        ^(KayokoSearchController *controller, BOOL value) { [controller setFavoritesFilterShowsCategories:value]; });
-    UIAction *tags = makeAction(
-        [bundle localizedStringForKey:@"Tags" value:nil table:@"Tweak"],
-        [searchController favoritesFilterShowsTags],
-        ^(KayokoSearchController *controller, BOOL value) { [controller setFavoritesFilterShowsTags:value]; });
-    UIAction *apps = makeAction(
-        [bundle localizedStringForKey:@"Applications" value:nil table:@"Tweak"],
-        [searchController favoritesFilterShowsApps],
-        ^(KayokoSearchController *controller, BOOL value) { [controller setFavoritesFilterShowsApps:value]; });
+    BOOL showsCategories = favorites ? [searchController favoritesFilterShowsCategories]
+                                     : [searchController historyFilterShowsCategories];
+    BOOL showsTags = favorites ? [searchController favoritesFilterShowsTags]
+                               : [searchController historyFilterShowsTags];
+    BOOL showsApps = favorites ? [searchController favoritesFilterShowsApps]
+                               : [searchController historyFilterShowsApps];
+    void (^applyCategories)(KayokoSearchController *, BOOL);
+    void (^applyTags)(KayokoSearchController *, BOOL);
+    void (^applyApps)(KayokoSearchController *, BOOL);
+    if (favorites) {
+        applyCategories = ^(KayokoSearchController *controller, BOOL value) {
+          [controller setFavoritesFilterShowsCategories:value];
+        };
+        applyTags = ^(KayokoSearchController *controller, BOOL value) {
+          [controller setFavoritesFilterShowsTags:value];
+        };
+        applyApps = ^(KayokoSearchController *controller, BOOL value) {
+          [controller setFavoritesFilterShowsApps:value];
+        };
+    } else {
+        applyCategories = ^(KayokoSearchController *controller, BOOL value) {
+          [controller setHistoryFilterShowsCategories:value];
+        };
+        applyTags = ^(KayokoSearchController *controller, BOOL value) {
+          [controller setHistoryFilterShowsTags:value];
+        };
+        applyApps = ^(KayokoSearchController *controller, BOOL value) {
+          [controller setHistoryFilterShowsApps:value];
+        };
+    }
 
-    return [UIMenu menuWithTitle:@"" children:@[ categories, tags, apps ]];
+    UIAction *categories =
+        makeAction([bundle localizedStringForKey:@"Categories" value:nil table:@"Tweak"], showsCategories,
+                   applyCategories);
+    UIAction *tags = makeAction([bundle localizedStringForKey:@"Tags" value:nil table:@"Tweak"], showsTags,
+                                applyTags);
+    UIAction *apps =
+        makeAction([bundle localizedStringForKey:@"Applications" value:nil table:@"Tweak"], showsApps, applyApps);
+    return @[ categories, tags, apps ];
+}
+
+- (UIMenu *)favoritesFilterMenu {
+    return [UIMenu menuWithTitle:@"" children:[self filterActionsForFavorites:YES]];
+}
+
+- (UIMenu *)historyFilterAndClearMenu {
+    NSMutableArray<UIMenuElement *> *children =
+        [[self filterActionsForFavorites:NO] mutableCopy];
+    [children addObjectsFromArray:[[self clipboardClearMenu] children]];
+    return [UIMenu menuWithTitle:@"" children:children];
 }
 
 - (UIMenu *)clipboardClearMenu {
