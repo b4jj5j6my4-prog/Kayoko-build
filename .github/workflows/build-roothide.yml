@@ -1,0 +1,42 @@
+name: 构建 RootHide ld64 951.9-1
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roothide-ld64-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-ld64:
+    name: 构建并审计 ld64
+    runs-on: macos-15
+    timeout-minutes: 360
+    env:
+      HOMEBREW_NO_ANALYTICS: "1"
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+
+    steps:
+      - name: 检出 Kayoko
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: 安装构建依赖
+        run: |
+          set -euo pipefail
+          brew install bash make cmake meson ninja pkg-config autoconf automake libtool llvm ldid dpkg zstd
+
+      - name: 构建 RootHide ld64
+        run: "$(brew --prefix bash)/bin/bash" scripts/ci/build-roothide-ld64.sh
+
+      - name: 上传产物和审计记录
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        with:
+          name: roothide-ld64-951.9-1-${{ github.run_id }}
+          path: artifacts/roothide-ld64/
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 6
