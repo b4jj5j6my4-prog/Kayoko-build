@@ -2,6 +2,12 @@ name: 构建 RootHide ld64 951.9-1
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-roothide.yml
+      - scripts/ci/**
 
 permissions:
   contents: read
