@@ -35,7 +35,8 @@ jobs:
           brew install bash make cmake meson ninja pkg-config autoconf automake libtool llvm ldid dpkg zstd
 
       - name: 构建 RootHide ld64
-        run: "$(brew --prefix bash)/bin/bash" scripts/ci/build-roothide-ld64.sh
+        run: |
+          "$(brew --prefix bash)/bin/bash" scripts/ci/build-roothide-ld64.sh
 
       - name: 上传产物和审计记录
         if: always()
